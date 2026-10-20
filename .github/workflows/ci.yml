@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: ${{ matrix.compiler }} (${{ matrix.build }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+        build: [release, sanitize]
+        include:
+          - build: release
+            flags: -O2
+          - build: sanitize
+            flags: -O1 -g -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compiler version
+        run: ${{ matrix.compiler }} --version
+
+      - name: Build
+        run: ${{ matrix.compiler }} -Wall -Wextra -Werror ${{ matrix.flags }} -o test_main test_main.c
+
+      - name: Test
+        run: ./test_main
