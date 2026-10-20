@@ -4,12 +4,15 @@
 #include <stdio.h>
 #include <string.h>
 
+static int32_t test_failures = 0;
+
 #define TEST_ASSERT(condition) \
 do { \
     if ((condition)) { \
         fprintf(stderr, "\e[0;32m[PASS]\e[0m %s:%d:\t%s\n", __func__, __LINE__, #condition); \
     } else { \
         fprintf(stderr, "\e[0;31m[FAIL]\e[0m %s:%d:\t%s\n", __func__, __LINE__, #condition); \
+        ++test_failures; \
         return; \
     } \
 } while(0)
@@ -845,5 +848,6 @@ int32_t main() {
     test_str_to_cstr();
     test_str_trim_left();
     test_str_trim_right();
-    return 0;
+    printf("Test failures: %d\n", test_failures);
+    return test_failures == 0 ? 0 : 1;
 }
