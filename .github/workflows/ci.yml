@@ -6,27 +6,44 @@ on:
 
 jobs:
   test:
-    name: ${{ matrix.compiler }} (${{ matrix.build }})
-    runs-on: ubuntu-latest
+    name: ${{ matrix.os }} / ${{ matrix.compiler }} (${{ matrix.build }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest, macos-latest]
         compiler: [gcc, clang]
         build: [release, sanitize]
+        exclude:
+          - os: macos-latest
+            compiler: gcc
+            build: sanitize
         include:
           - build: release
-            flags: -O2
+            flags: -O3
           - build: sanitize
             flags: -O1 -g -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer
 
     steps:
       - uses: actions/checkout@v4
 
+      # On macOS, `gcc` is an alias for Apple clang, so use Homebrew's real GCC
+      - name: Select compiler
+        shell: bash
+        run: |
+          cc="${{ matrix.compiler }}"
+          if [ "$RUNNER_OS" = "macOS" ] && [ "$cc" = "gcc" ]; then
+            brew list gcc >/dev/null 2>&1 || brew install gcc
+            major=$(brew list --versions gcc | awk '{print $NF}' | cut -d. -f1)
+            cc="$(brew --prefix gcc)/bin/gcc-$major"
+          fi
+          echo "CC=$cc" >> "$GITHUB_ENV"
+
       - name: Compiler version
-        run: ${{ matrix.compiler }} --version
+        run: $CC --version
 
       - name: Build
-        run: ${{ matrix.compiler }} -Wall -Wextra -Werror ${{ matrix.flags }} -o test_main test_main.c
+        run: $CC -Wall -Wextra -Werror ${{ matrix.flags }} -o test_main test_main.c
 
       - name: Test
         run: ./test_main
