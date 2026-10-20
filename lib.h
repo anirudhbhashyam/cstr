@@ -30,6 +30,7 @@ str str_chop_by_delim(str* string, const char delim);
 int32_t str_to_cstr(str* string, char* buffer, uint64_t size);
 void str_trim_left(str* string);
 void str_trim_right(str* string);
+void str_trim(str* string);
 int32_t str_try_chop_by_delim(str* string, char delim, str* chopped);
 
 #ifdef __cplusplus
@@ -192,6 +193,11 @@ void str_trim_right(str* string) {
     uint64_t i = string->size;
     while (i > 0 && isspace((unsigned char) string->data[i - 1])) --i;
     str_drop_right(string, string->size - i);
+}
+
+void str_trim(str* string) {
+    str_trim_left(string);
+    str_trim_right(string);
 }
 
 #ifdef __cplusplus

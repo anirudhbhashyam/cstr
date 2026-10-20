@@ -1023,6 +1023,116 @@ void test_str_try_chop_by_delim() {
     TEST_ASSERT(s.data[0] == 'z');
 }
 
+void test_str_trim() {
+    // Both sides
+    const char* source = "  abc  ";
+    str s = str_create(source);
+    str_trim(&s);
+    TEST_ASSERT(s.data == source + 2);
+    TEST_ASSERT(s.size == 3);
+
+    // Nothing to trim
+    source = "abc";
+    s = str_create(source);
+    str_trim(&s);
+    TEST_ASSERT(s.data == source);
+    TEST_ASSERT(s.size == 3);
+
+    // Left side only
+    source = " \t abc";
+    s = str_create(source);
+    str_trim(&s);
+    TEST_ASSERT(s.data == source + 3);
+    TEST_ASSERT(s.size == 3);
+
+    // Right side only
+    source = "abc \r\n";
+    s = str_create(source);
+    str_trim(&s);
+    TEST_ASSERT(s.data == source);
+    TEST_ASSERT(s.size == 3);
+
+    // Every whitespace character isspace knows about, on both sides
+    source = " \t\n\v\f\rabc \t\n\v\f\r";
+    s = str_create(source);
+    str_trim(&s);
+    TEST_ASSERT(s.data == source + 6);
+    TEST_ASSERT(s.size == 3);
+
+    // Interior whitespace is kept
+    source = "  hello   world  ";
+    s = str_create(source);
+    str_trim(&s);
+    TEST_ASSERT(s.data == source + 2);
+    TEST_ASSERT(s.size == 13);
+    TEST_ASSERT(memcmp(s.data, "hello   world", 13) == 0);
+
+    // Single character surrounded by whitespace
+    source = " x ";
+    s = str_create(source);
+    str_trim(&s);
+    TEST_ASSERT(s.data == source + 1);
+    TEST_ASSERT(s.size == 1);
+    TEST_ASSERT(s.data[0] == 'x');
+
+    // All whitespace: empty, positioned at the end
+    source = " \t \n ";
+    s = str_create(source);
+    str_trim(&s);
+    TEST_ASSERT(s.size == 0);
+    TEST_ASSERT(s.data == source + 5);
+
+    // Empty
+    source = "";
+    s = str_create(source);
+    str_trim(&s);
+    TEST_ASSERT(s.size == 0);
+    TEST_ASSERT(s.data == source);
+
+    // Trimming twice changes nothing
+    source = "  abc  ";
+    s = str_create(source);
+    str_trim(&s);
+    str_trim(&s);
+    TEST_ASSERT(s.data == source + 2);
+    TEST_ASSERT(s.size == 3);
+
+    // Bytes >= 0x80 (UTF-8 "é") are not whitespace
+    source = " \xC3\xA9 ";
+    s = str_create(source);
+    str_trim(&s);
+    TEST_ASSERT(s.data == source + 1);
+    TEST_ASSERT(s.size == 2);
+
+    // Slice: text outside the slice doesn't stop the trim
+    source = "ab  cd  ef";
+    s = str_create(source);
+    str_substr(&s, 2, 8);           // "  cd  "
+    str_trim(&s);
+    TEST_ASSERT(s.data == source + 4);
+    TEST_ASSERT(s.size == 2);
+
+    // Same result as trim_left then trim_right
+    source = "\t key = value \n";
+    str a = str_create(source);
+    str b = str_create(source);
+    str_trim(&a);
+    str_trim_left(&b);
+    str_trim_right(&b);
+    TEST_ASSERT(a.data == b.data);
+    TEST_ASSERT(a.size == b.size);
+
+    // Typical use: trimming fields after a chop
+    str line = str_create("  key = value \n");
+    str key = str_chop_by_delim(&line, '=');
+    str_trim(&key);
+    str_trim(&line);
+    TEST_ASSERT(key.size == 3);
+    TEST_ASSERT(memcmp(key.data, "key", 3) == 0);
+    TEST_ASSERT(line.size == 5);
+    TEST_ASSERT(memcmp(line.data, "value", 5) == 0);
+}
+
 int32_t main() {
     test_str_create();
     test_str_size();
@@ -1045,6 +1155,7 @@ int32_t main() {
     test_str_from_buffer();
     test_str_fmt();
     test_str_try_chop_by_delim();
-    printf("Test failures: %d\n", test_failures);
+    test_str_trim();
+    printf("\e[1mTest failures: %d\e[0m\n", test_failures);
     return test_failures == 0 ? 0 : 1;
 }
