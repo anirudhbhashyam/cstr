@@ -30,6 +30,7 @@ str str_chop_by_delim(str* string, const char delim);
 int32_t str_to_cstr(str* string, char* buffer, uint64_t size);
 void str_trim_left(str* string);
 void str_trim_right(str* string);
+int32_t str_try_chop_by_delim(str* string, char delim, str* chopped);
 
 #ifdef __cplusplus
 }
@@ -152,15 +153,21 @@ void str_take_right(str* string, uint64_t n) {
     str_drop_left(string, string->size - n);
 }
 
-str str_chop_by_delim(str* string, const char delim) {
-    str chopped = *string;
-    str_foreach(string) {
-        if (*it != delim) continue;
-        uint64_t chopped_size = it - string->data;
-        chopped.size = chopped_size;
-        str_drop_left(string, chopped_size + 1);
-        return chopped;
-    }
+int32_t str_try_chop_by_delim(str* string, char delim, str* chopped) {
+    const char* found = (const char*) memchr(string->data, delim, string->size);
+    if (found == NULL) return -1;
+
+    uint64_t chopped_size = found - string->data;
+    chopped->data = string->data;
+    chopped->size = chopped_size;
+    str_drop_left(string, chopped_size + 1);
+    return 0;
+}
+
+str str_chop_by_delim(str* string, char delim) {
+    str chopped;
+    if (str_try_chop_by_delim(string, delim, &chopped) == 0) return chopped;
+    chopped = *string;
     str_drop_left(string, string->size);
     return chopped;
 }

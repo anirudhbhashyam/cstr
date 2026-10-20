@@ -829,6 +829,200 @@ void test_str_trim_right() {
     TEST_ASSERT(memcmp(s.data, "hello world", 11) == 0);
 }
 
+void test_str_from_buffer() {
+    // Buffer with no null terminator
+    const char buffer[3] = { 'a', 'b', 'c' };
+    str s = str_from_buffer(buffer, 3);
+    TEST_ASSERT(s.data == buffer);
+    TEST_ASSERT(s.size == 3);
+
+    // Size is taken as given, not from strlen
+    const char* source = "Hello, World!";
+    s = str_from_buffer(source, 5);
+    TEST_ASSERT(s.data == source);
+    TEST_ASSERT(s.size == 5);
+    TEST_ASSERT(str_endswith(&s, "Hello") == 0);
+
+    // Embedded '\0' is part of the string
+    const char embedded[] = "a\0b";
+    s = str_from_buffer(embedded, 3);
+    TEST_ASSERT(s.size == 3);
+    TEST_ASSERT(s.data[1] == '\0');
+    TEST_ASSERT(s.data[2] == 'b');
+
+    // Zero size
+    s = str_from_buffer(source, 0);
+    TEST_ASSERT(s.data == source);
+    TEST_ASSERT(s.size == 0);
+
+    // Same result as str_create over the whole string
+    str a = str_from_buffer(source, strlen(source));
+    str b = str_create(source);
+    TEST_ASSERT(a.data == b.data);
+    TEST_ASSERT(a.size == b.size);
+    TEST_ASSERT(str_equals(&a, &b) == 0);
+
+    // Works with the other functions
+    s = str_from_buffer(buffer, 3);
+    uint64_t position;
+    TEST_ASSERT(str_find(&s, "bc", &position) == 0);
+    TEST_ASSERT(position == 1);
+    TEST_ASSERT(str_find(&s, "cd", &position) == -1);
+}
+
+void test_str_fmt() {
+    char buffer[64];
+
+    // Whole string
+    str hello = str_create("Hello");
+    snprintf(buffer, sizeof(buffer), STR_FMT, STR_ARG(hello));
+    TEST_ASSERT(strcmp(buffer, "Hello") == 0);
+
+    // Slice prints only its own bytes
+    str world = str_create("Hello, World!");
+    str_substr(&world, 7, 12);
+    snprintf(buffer, sizeof(buffer), STR_FMT, STR_ARG(world));
+    TEST_ASSERT(strcmp(buffer, "World") == 0);
+
+    // Inside a larger format string
+    snprintf(buffer, sizeof(buffer), "[" STR_FMT "]", STR_ARG(world));
+    TEST_ASSERT(strcmp(buffer, "[World]") == 0);
+
+    // Several in one call
+    snprintf(buffer, sizeof(buffer), STR_FMT ", " STR_FMT "!", STR_ARG(hello), STR_ARG(world));
+    TEST_ASSERT(strcmp(buffer, "Hello, World!") == 0);
+
+    // Empty
+    str empty = str_create("");
+    snprintf(buffer, sizeof(buffer), "<" STR_FMT ">", STR_ARG(empty));
+    TEST_ASSERT(strcmp(buffer, "<>") == 0);
+
+    // Buffer without a null terminator
+    const char raw[3] = { 'x', 'y', 'z' };
+    str s = str_from_buffer(raw, 3);
+    snprintf(buffer, sizeof(buffer), STR_FMT, STR_ARG(s));
+    TEST_ASSERT(strcmp(buffer, "xyz") == 0);
+
+    // Return value is the printed length
+    TEST_ASSERT(snprintf(buffer, sizeof(buffer), STR_FMT, STR_ARG(world)) == 5);
+}
+
+void test_str_try_chop_by_delim() {
+    const char* source = "a,bc,def";
+    str s = str_create(source);
+    str chopped;
+
+    TEST_ASSERT(str_try_chop_by_delim(&s, ',', &chopped) == 0);
+    TEST_ASSERT(chopped.data == source);
+    TEST_ASSERT(chopped.size == 1);
+    TEST_ASSERT(s.data == source + 2);
+    TEST_ASSERT(s.size == 6);
+
+    TEST_ASSERT(str_try_chop_by_delim(&s, ',', &chopped) == 0);
+    TEST_ASSERT(chopped.data == source + 2);
+    TEST_ASSERT(chopped.size == 2);
+    TEST_ASSERT(s.data == source + 5);
+    TEST_ASSERT(s.size == 3);
+
+    // No delimiter left: both arguments untouched
+    TEST_ASSERT(str_try_chop_by_delim(&s, ',', &chopped) == -1);
+    TEST_ASSERT(chopped.data == source + 2);
+    TEST_ASSERT(chopped.size == 2);
+    TEST_ASSERT(s.data == source + 5);
+    TEST_ASSERT(s.size == 3);
+
+    // No delimiter at all
+    source = "abc";
+    s = str_create(source);
+    chopped = str_create("sentinel");
+    TEST_ASSERT(str_try_chop_by_delim(&s, ',', &chopped) == -1);
+    TEST_ASSERT(s.data == source);
+    TEST_ASSERT(s.size == 3);
+    TEST_ASSERT(chopped.size == 8);
+
+    // Empty
+    source = "";
+    s = str_create(source);
+    TEST_ASSERT(str_try_chop_by_delim(&s, ',', &chopped) == -1);
+    TEST_ASSERT(s.data == source);
+    TEST_ASSERT(s.size == 0);
+
+    // Leading delimiter gives an empty field
+    source = ",a";
+    s = str_create(source);
+    TEST_ASSERT(str_try_chop_by_delim(&s, ',', &chopped) == 0);
+    TEST_ASSERT(chopped.data == source);
+    TEST_ASSERT(chopped.size == 0);
+    TEST_ASSERT(s.data == source + 1);
+    TEST_ASSERT(s.size == 1);
+
+    // Doubled delimiter gives an empty field between
+    source = "a,,b";
+    s = str_create(source);
+    TEST_ASSERT(str_try_chop_by_delim(&s, ',', &chopped) == 0);
+    TEST_ASSERT(chopped.size == 1);
+    TEST_ASSERT(str_try_chop_by_delim(&s, ',', &chopped) == 0);
+    TEST_ASSERT(chopped.data == source + 2);
+    TEST_ASSERT(chopped.size == 0);
+    TEST_ASSERT(str_try_chop_by_delim(&s, ',', &chopped) == -1);
+    TEST_ASSERT(s.data == source + 3);
+    TEST_ASSERT(s.size == 1);
+
+    // Trailing delimiter vs no delimiter: now distinguishable
+    source = "a,";
+    s = str_create(source);
+    TEST_ASSERT(str_try_chop_by_delim(&s, ',', &chopped) == 0);
+    TEST_ASSERT(chopped.size == 1);
+    TEST_ASSERT(s.data == source + 2);
+    TEST_ASSERT(s.size == 0);
+    TEST_ASSERT(str_try_chop_by_delim(&s, ',', &chopped) == -1);
+
+    source = "a";
+    s = str_create(source);
+    TEST_ASSERT(str_try_chop_by_delim(&s, ',', &chopped) == -1);
+    TEST_ASSERT(s.size == 1);
+
+    // Only a delimiter
+    source = ",";
+    s = str_create(source);
+    TEST_ASSERT(str_try_chop_by_delim(&s, ',', &chopped) == 0);
+    TEST_ASSERT(chopped.data == source);
+    TEST_ASSERT(chopped.size == 0);
+    TEST_ASSERT(s.data == source + 1);
+    TEST_ASSERT(s.size == 0);
+
+    // Delimiter just past the end of a slice is not found
+    source = "ab,cd";
+    s = str_create(source);
+    str_take_left(&s, 2);
+    TEST_ASSERT(str_try_chop_by_delim(&s, ',', &chopped) == -1);
+    TEST_ASSERT(s.data == source);
+    TEST_ASSERT(s.size == 2);
+
+    // Buffer without a null terminator
+    const char raw[4] = { 'x', ';', 'y', 'z' };
+    s = str_from_buffer(raw, 4);
+    TEST_ASSERT(str_try_chop_by_delim(&s, ';', &chopped) == 0);
+    TEST_ASSERT(chopped.data == raw);
+    TEST_ASSERT(chopped.size == 1);
+    TEST_ASSERT(s.data == raw + 2);
+    TEST_ASSERT(s.size == 2);
+
+    // Split loop: delimiters + 1 fields, remainder is the last one
+    s = str_create("x,y,,z");
+    const char* expected[] = { "x", "y", "" };
+    uint64_t count = 0;
+    while (count < 4 && str_try_chop_by_delim(&s, ',', &chopped) == 0) {
+        TEST_ASSERT(count < 3);
+        TEST_ASSERT(chopped.size == strlen(expected[count]));
+        TEST_ASSERT(memcmp(chopped.data, expected[count], chopped.size) == 0);
+        ++count;
+    }
+    TEST_ASSERT(count == 3);
+    TEST_ASSERT(s.size == 1);
+    TEST_ASSERT(s.data[0] == 'z');
+}
+
 int32_t main() {
     test_str_create();
     test_str_size();
@@ -848,6 +1042,9 @@ int32_t main() {
     test_str_to_cstr();
     test_str_trim_left();
     test_str_trim_right();
+    test_str_from_buffer();
+    test_str_fmt();
+    test_str_try_chop_by_delim();
     printf("Test failures: %d\n", test_failures);
     return test_failures == 0 ? 0 : 1;
 }
